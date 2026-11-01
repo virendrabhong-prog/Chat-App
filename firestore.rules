@@ -1,0 +1,75 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null && request.auth.token.email_verified == true; }
+    function isMember(serverId) {
+      return signedIn() && request.auth.uid in get(/databases/$(database)/documents/servers/$(serverId)).data.members;
+    }
+    function isOwner(serverId) {
+      return signedIn() && get(/databases/$(database)/documents/servers/$(serverId)).data.ownerId == request.auth.uid;
+    }
+
+    match /servers/{serverId} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.members is list
+        && request.auth.uid in request.resource.data.members
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 40
+        && request.resource.data.channels is list
+        && request.resource.data.channels.size() <= 100;
+      allow update: if signedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && request.resource.data.members == resource.data.members
+        && request.resource.data.channels is list
+        && request.resource.data.channels.size() <= 100;
+      allow delete: if false;
+    }
+
+    match /messages/{messageId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isMember(request.resource.data.serverId)
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.channel is string
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.user is string
+        && request.resource.data.memberUids == get(/databases/$(database)/documents/servers/$(request.resource.data.serverId)).data.members;
+      allow update, delete: if false;
+    }
+
+    match /polls/{pollId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.memberUids;
+      allow create: if isMember(request.resource.data.serverId)
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.question is string
+        && request.resource.data.question.size() > 0
+        && request.resource.data.question.size() <= 180
+        && request.resource.data.options is list
+        && request.resource.data.options.size() >= 2
+        && request.resource.data.options.size() <= 6
+        && request.resource.data.counts.size() == request.resource.data.options.size()
+        && request.resource.data.voters.size() == 0
+        && request.resource.data.memberUids == get(/databases/$(database)/documents/servers/$(request.resource.data.serverId)).data.members;
+      allow update: if isMember(resource.data.serverId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['counts', 'voters'])
+        && request.resource.data.voters.size() == resource.data.voters.size() + 1
+        && request.auth.uid in request.resource.data.voters
+        && !(request.auth.uid in resource.data.voters)
+        && request.resource.data.counts.size() == resource.data.counts.size();
+      allow delete: if false;
+    }
+
+    match /invites/{code} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if isMember(request.resource.data.serverId)
+        && request.resource.data.createdBy == request.auth.uid;
+      allow update, delete: if false;
+    }
+  }
+}

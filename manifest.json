@@ -1,0 +1,9 @@
+{
+  "name": "Chat App",
+  "short_name": "Chat App",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#171821",
+  "theme_color": "#171821",
+  "icons": []
+}
